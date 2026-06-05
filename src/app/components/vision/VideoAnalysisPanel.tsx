@@ -240,6 +240,19 @@ export function VideoAnalysisPanel() {
   };
 
   const handleFile = async (file: File) => {
+    // An empty upload is almost always an iCloud/cloud placeholder whose bytes
+    // haven't been downloaded — catch it up front instead of failing to decode.
+    if (file.size === 0) {
+      fileRef.current = null;
+      setFileName(file.name);
+      setStatus("empty");
+      setFileErrorDetail(null);
+      setFileError(
+        "This file has no data — it looks like an iCloud placeholder that hasn't downloaded. In Finder, right-click it → “Download Now” (or turn off iCloud “Optimize Mac Storage”), then upload again.",
+      );
+      return;
+    }
+
     if (urlRef.current) URL.revokeObjectURL(urlRef.current);
     const url = URL.createObjectURL(file);
     urlRef.current = url;
@@ -416,7 +429,7 @@ export function VideoAnalysisPanel() {
               <PoseOverlay active={hasVideo && poseService.ready} className="absolute inset-0 w-full h-full z-10 pointer-events-none" />
 
               {/* Empty state */}
-              {!hasVideo && !transcoding && (
+              {!hasVideo && !transcoding && !fileError && (
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 text-white/40 hover:text-white/70 transition-colors"
