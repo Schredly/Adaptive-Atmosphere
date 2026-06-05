@@ -42,6 +42,7 @@ export function SpotifyIntegration() {
   const [copied, setCopied] = useState(false);
   const redirectUri = getRedirectUri();
   const isLoopback = window.location.hostname === "127.0.0.1";
+  const loopbackUrl = `http://127.0.0.1:${window.location.port || "5173"}/spotify`;
   const hasClientId = clientId.trim().length > 0;
   const isLive = mode === "live";
   const isPlaying = playbackState === "playing" || playbackState === "transitioning";
@@ -147,6 +148,20 @@ export function SpotifyIntegration() {
             </div>
           </div>
 
+          {!isLoopback && (
+            <div className="mb-5 flex items-center justify-between gap-4 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+              <p className="text-amber-200/90 text-sm">
+                Spotify rejects <span className="font-mono">{window.location.hostname}</span> redirect URIs. Open the app on the loopback address to connect.
+              </p>
+              <a
+                href={loopbackUrl}
+                className="flex-shrink-0 px-4 py-2 rounded-lg bg-amber-400/90 hover:bg-amber-400 text-black text-sm font-medium"
+              >
+                Switch to 127.0.0.1 →
+              </a>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-6">
             {/* Client ID + connect */}
             <div className="space-y-3">
@@ -167,10 +182,11 @@ export function SpotifyIntegration() {
                 </button>
               </div>
               <motion.button
-                whileHover={{ scale: hasClientId ? 1.02 : 1 }}
-                whileTap={{ scale: hasClientId ? 0.98 : 1 }}
+                whileHover={{ scale: hasClientId && isLoopback ? 1.02 : 1 }}
+                whileTap={{ scale: hasClientId && isLoopback ? 0.98 : 1 }}
                 onClick={connect}
-                disabled={!hasClientId}
+                disabled={!hasClientId || !isLoopback}
+                title={!isLoopback ? "Open the app on 127.0.0.1 first" : undefined}
                 className="w-full px-4 py-2.5 bg-gradient-to-r from-[#1DB954] to-[#10b981] rounded-xl text-white text-sm shadow-lg shadow-[#1DB954]/20 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Connect Spotify
@@ -197,16 +213,10 @@ export function SpotifyIntegration() {
               </div>
               <ol className="text-white/40 text-xs space-y-1 list-decimal list-inside">
                 <li>Create an app at developer.spotify.com/dashboard</li>
-                <li>Add the Redirect URI above; enable Web API + Web Playback SDK</li>
+                <li>Add the Redirect URI above <span className="text-white/30">(exact match — copy it)</span>; enable Web API + Web Playback SDK</li>
                 <li>Settings → User Management → add your Spotify account email</li>
                 <li>Paste the Client ID and hit Connect</li>
               </ol>
-              {!isLoopback && (
-                <p className="text-amber-300/80 text-xs">
-                  Tip: open the app at <span className="font-mono">http://127.0.0.1:5173</span> — Spotify rejects
-                  “localhost” redirect URIs.
-                </p>
-              )}
             </div>
           </div>
         </motion.div>
