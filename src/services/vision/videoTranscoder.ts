@@ -42,17 +42,25 @@ async function ensureLoaded(): Promise<FFmpeg> {
   return ffmpeg;
 }
 
+export type TranscodePhase = "loading" | "converting";
+
 export interface TranscodeOptions {
-  /** 0..1 conversion progress. */
+  /** 0..1 conversion progress (only meaningful in the "converting" phase). */
   onProgress?: (fraction: number) => void;
+  /** Coarse phase: downloading the converter vs. actually converting. */
+  onPhase?: (phase: TranscodePhase) => void;
 }
 
 /**
- * Transcode any browser-unfriendly video file to an H.264 MP4 Blob. Downscales
- * to ≤1280px wide and drops audio (we only analyze video) to keep it fast.
+ * Transcode any browser-unfriendly video file to an H.264 MP4 Blob. We only
+ * need it for pose analysis, so we downscale hard (≤640px wide) and cap to 15fps
+ * — this is dramatically faster and lighter on memory than a full-res convert,
+ * which matters for the single-thread wasm encoder on real-length clips.
  */
 export async function transcodeToMp4(file: File, opts: TranscodeOptions = {}): Promise<Blob> {
+  opts.onPhase?.("loading");
   const f = await ensureLoaded();
+  opts.onPhase?.("converting");
   const onProgress = ({ progress }: { progress: number }) => {
     if (Number.isFinite(progress)) opts.onProgress?.(Math.max(0, Math.min(1, progress)));
   };
@@ -64,7 +72,8 @@ export async function transcodeToMp4(file: File, opts: TranscodeOptions = {}): P
     console.debug("[transcoder] exec start", input);
     await f.exec([
       "-i", input,
-      "-vf", "scale='min(1280,iw)':-2",
+      "-vf", "scale='min(640,iw)':-2",
+      "-r", "15",
       "-c:v", "libx264",
       "-preset", "ultrafast",
       "-pix_fmt", "yuv420p",

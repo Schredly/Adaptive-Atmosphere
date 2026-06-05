@@ -96,6 +96,7 @@ export function VideoAnalysisPanel() {
   const [fileError, setFileError] = useState<string | null>(null);
   const [transcoding, setTranscoding] = useState(false);
   const [transcodePct, setTranscodePct] = useState(0);
+  const [transcodePhase, setTranscodePhase] = useState<"loading" | "converting">("loading");
 
   // Global music state — driven by this panel's analysis while a video plays.
   const activeBucket = useAtmosphereStore((s) => s.activeBucket);
@@ -110,9 +111,11 @@ export function VideoAnalysisPanel() {
     setFileError(null);
     setTranscoding(true);
     setTranscodePct(0);
+    setTranscodePhase("loading");
     setStatus("loading");
     try {
       const blob = await transcodeToMp4(file, {
+        onPhase: (phase) => setTranscodePhase(phase),
         onProgress: (frac) => setTranscodePct(Math.round(frac * 100)),
       });
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
@@ -426,11 +429,23 @@ export function VideoAnalysisPanel() {
                   <div className="w-20 h-20 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10">
                     <Film className="w-10 h-10 text-[#8b5cf6] animate-pulse" />
                   </div>
-                  <p>Converting video for your browser… {transcodePct}%</p>
-                  <div className="w-64 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6] transition-[width] duration-200" style={{ width: `${transcodePct}%` }} />
-                  </div>
-                  <p className="text-white/30 text-xs">iPhone HEVC clip detected — transcoding to H.264 locally, no upload.</p>
+                  {transcodePhase === "loading" ? (
+                    <>
+                      <p>Downloading converter… <span className="text-white/40">(one-time, ~30&nbsp;MB)</span></p>
+                      <div className="w-64 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                        <div className="h-full w-1/3 bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6] animate-pulse" />
+                      </div>
+                      <p className="text-white/30 text-xs">First HEVC clip only — then conversion is instant.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>Converting video for your browser… {transcodePct}%</p>
+                      <div className="w-64 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6] transition-[width] duration-200" style={{ width: `${transcodePct}%` }} />
+                      </div>
+                      <p className="text-white/30 text-xs">iPhone HEVC clip detected — transcoding to H.264 locally, no upload.</p>
+                    </>
+                  )}
                 </div>
               )}
 
