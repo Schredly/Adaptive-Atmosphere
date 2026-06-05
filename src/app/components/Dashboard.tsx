@@ -8,6 +8,7 @@ import { useMotionAnalysis } from "@/hooks/useMotionAnalysis";
 import { ATMOSPHERE_CONFIG } from "@/types/atmosphere";
 import { relativeTime } from "@/services/ai/interpretationEngine";
 import { PoseOverlay } from "./vision/PoseOverlay";
+import { SoundControl } from "./SoundControl";
 
 const PATTERN_LABELS: { key: "repetitive" | "highIntensity" | "synchronized" | "erratic"; label: string; color: string }[] = [
   { key: "highIntensity", label: "High Intensity", color: "#ef4444" },
@@ -751,6 +752,11 @@ export function Dashboard() {
                   <p className="text-white/40 text-xs mb-1">Transition</p>
                   <p className="text-[#10b981]">{Math.max(6, Math.round(30 - energyLevel / 4))}s</p>
                 </div>
+              </div>
+
+              {/* Sound: tap-to-enable, then mute + volume */}
+              <div className="mb-4">
+                <SoundControl />
               </div>
 
               {/* Waveform Visualization */}

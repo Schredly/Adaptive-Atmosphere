@@ -94,6 +94,9 @@ class SpotifyManager {
       }
     }
     this.offSnapshot = this.controller.onUpdate(() => this.pushSnapshot());
+    // Apply the user's persisted volume / mute to the fresh controller.
+    await this.controller.setVolume(this.store.musicVolume);
+    this.controller.setMuted?.(this.store.audioMuted);
   }
 
   async setMode(mode: SpotifyMode): Promise<void> {
@@ -290,7 +293,18 @@ class SpotifyManager {
   }
 
   async setVolume(v01: number): Promise<void> {
+    this.store.setMusicVolume(v01);
     await this.controller?.setVolume(v01);
+  }
+
+  /** Unlock audio output from a user gesture (the "Enable sound" control). */
+  enableAudio(): void {
+    this.controller?.enableAudio?.();
+  }
+
+  setMuted(muted: boolean): void {
+    this.store.setAudioMuted(muted);
+    this.controller?.setMuted?.(muted);
   }
 
   // ── Store mirroring ─────────────────────────────────────────
@@ -299,6 +313,7 @@ class SpotifyManager {
     const s = this.store;
     const snap = this.controller.snapshot();
     s.setTrackProgress(snap.positionMs, snap.durationMs);
+    if (s.audioEnabled !== snap.audioEnabled) s.setAudioEnabled(snap.audioEnabled);
     if (snap.track && snap.track.id !== this.lastTrackId) {
       this.lastTrackId = snap.track.id;
       const bucket = snap.bucket ?? s.activeBucket ?? "groove";

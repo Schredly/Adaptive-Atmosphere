@@ -106,6 +106,12 @@ export interface AtmosphereStore {
   /** Live playback position for the progress/countdown UI. */
   trackPositionMs: number;
   trackDurationMs: number;
+  /** Web Audio (demo) output is unlocked & running this session. */
+  audioEnabled: boolean;
+  /** User has muted music output. */
+  audioMuted: boolean;
+  /** Music output volume, 0..1. */
+  musicVolume: number;
   /** Current transition / cooldown phase. */
   transition: TransitionInfo;
   /** epoch ms of the last committed playlist transition. */
@@ -144,6 +150,9 @@ export interface AtmosphereStore {
   setMusic: (playlist: Playlist, track: Track) => void;
   setPlaybackState: (state: PlaybackState) => void;
   setBpm: (bpm: number) => void;
+  setAudioEnabled: (enabled: boolean) => void;
+  setAudioMuted: (muted: boolean) => void;
+  setMusicVolume: (volume: number) => void;
 
   updateSettings: (patch: Partial<UISettings>) => void;
 }
@@ -209,6 +218,9 @@ export const useAtmosphereStore = create<AtmosphereStore>()(
   currentBpm: 112,
   trackPositionMs: 0,
   trackDurationMs: 0,
+  audioEnabled: false,
+  audioMuted: false,
+  musicVolume: 0.8,
   transition: {
     phase: "idle",
     fromBucket: null,
@@ -282,6 +294,9 @@ export const useAtmosphereStore = create<AtmosphereStore>()(
     set({ activePlaylist, currentTrack, currentBpm: currentTrack.bpm }),
   setPlaybackState: (playbackState) => set({ playbackState }),
   setBpm: (currentBpm) => set({ currentBpm }),
+  setAudioEnabled: (audioEnabled) => set({ audioEnabled }),
+  setAudioMuted: (audioMuted) => set({ audioMuted }),
+  setMusicVolume: (musicVolume) => set({ musicVolume }),
 
   updateSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
     }),
@@ -293,6 +308,8 @@ export const useAtmosphereStore = create<AtmosphereStore>()(
         spotifyMode: s.spotifyMode,
         activeDeviceId: s.activeDeviceId,
         playlistMappings: s.playlistMappings,
+        musicVolume: s.musicVolume,
+        audioMuted: s.audioMuted,
       }),
     },
   ),

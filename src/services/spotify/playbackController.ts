@@ -27,6 +27,8 @@ export interface PlaybackSnapshot {
   positionMs: number;
   durationMs: number;
   bucket: MusicBucket | null;
+  /** Whether audio output is actually unlocked/audible (demo synth context). */
+  audioEnabled: boolean;
 }
 
 export interface PlaybackController {
@@ -36,6 +38,10 @@ export interface PlaybackController {
   pause(fadeMs?: number): Promise<void>;
   resume(): Promise<void>;
   setVolume(v01: number): Promise<void>;
+  /** Mute/unmute output without losing the volume setting. */
+  setMuted?(muted: boolean): void;
+  /** Unlock audio from a user gesture (browser autoplay policy). */
+  enableAudio?(): void;
   snapshot(): PlaybackSnapshot;
   onUpdate(cb: () => void): () => void;
   destroy(): void;
@@ -61,6 +67,16 @@ export class DemoController implements PlaybackController {
 
   async init(): Promise<void> {
     this.synth.setVolume(this.volume);
+    // Surface audio-unlock transitions through the normal snapshot channel.
+    this.synth.onEnabledChange = () => this.emit();
+  }
+
+  enableAudio(): void {
+    this.synth.unlock();
+  }
+
+  setMuted(muted: boolean): void {
+    this.synth.setMuted(muted);
   }
 
   onUpdate(cb: () => void): () => void {
@@ -133,6 +149,7 @@ export class DemoController implements PlaybackController {
       positionMs: this.positionMs,
       durationMs: (track?.durationSec ?? 0) * 1000,
       bucket: this.bucket,
+      audioEnabled: this.synth.enabled,
     };
   }
 
@@ -203,6 +220,15 @@ export class SpotifyController implements PlaybackController {
     await this.sdk.setVolume(v01);
   }
 
+  setMuted(muted: boolean): void {
+    void this.sdk.setVolume(muted ? 0 : this.targetVolume);
+  }
+
+  enableAudio(): void {
+    // The SDK's audio element unlocks on the same gesture; nudge a resume.
+    void this.sdk.resume();
+  }
+
   /** Smoothly ramp the SDK volume; cancels any in-flight ramp. */
   private async ramp(from01: number, to01: number, ms: number): Promise<void> {
     const token = ++this.rampToken;
@@ -235,6 +261,7 @@ export class SpotifyController implements PlaybackController {
       positionMs: s.positionMs,
       durationMs: s.durationMs,
       bucket: this.bucket,
+      audioEnabled: s.track !== null,
     };
   }
 

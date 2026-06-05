@@ -93,8 +93,18 @@ export class DemoSynth {
   private schedulerId: number | null = null;
 
   private volume = 0.8;
+  private muted = false;
   private playing = false;
   private unlockBound = false;
+  private wasRunning = false;
+
+  /** Fired when the AudioContext transitions running ↔ suspended. */
+  onEnabledChange: (() => void) | null = null;
+
+  /** True once the browser has actually unlocked audio output. */
+  get enabled(): boolean {
+    return this.ctx?.state === "running";
+  }
 
   // ── Public API ───────────────────────────────────────────────
 
@@ -123,6 +133,27 @@ export class DemoSynth {
 
   resume(): void {
     this.play();
+  }
+
+  /**
+   * Explicitly unlock audio from a user gesture without changing play/pause
+   * intent — used by the "Enable sound" affordance. The AudioContext can only
+   * leave "suspended" inside a gesture, which a button click satisfies.
+   */
+  unlock(): void {
+    this.ensureContext();
+    this.bindUnlock();
+    void this.ctx?.resume().then(() => this.notifyIfRunning());
+    if (this.playing) {
+      this.ensurePad();
+      this.applyVolume(0.2);
+    }
+    this.notifyIfRunning();
+  }
+
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    this.applyVolume(0.08);
   }
 
   /** Stop the rhythm and fade the pad out. */
@@ -189,9 +220,10 @@ export class DemoSynth {
     if (this.unlockBound || typeof window === "undefined") return;
     this.unlockBound = true;
     const unlock = () => {
-      void this.ctx?.resume();
+      void this.ctx?.resume().then(() => this.notifyIfRunning());
       if (this.ctx && this.ctx.state === "running") {
         this.applyVolume(0.2);
+        this.notifyIfRunning();
         window.removeEventListener("pointerdown", unlock);
         window.removeEventListener("keydown", unlock);
         window.removeEventListener("touchstart", unlock);
@@ -204,11 +236,20 @@ export class DemoSynth {
 
   private applyVolume(ramp = 0.05): void {
     if (!this.master || !this.ctx) return;
-    const target = this.playing ? this.volume * 0.5 : 0.0001;
+    const target = this.playing && !this.muted ? this.volume * 0.5 : 0.0001;
     const t = this.ctx.currentTime;
     this.master.gain.cancelScheduledValues(t);
     this.master.gain.setValueAtTime(Math.max(0.0001, this.master.gain.value), t);
     this.master.gain.linearRampToValueAtTime(Math.max(0.0001, target), t + ramp);
+  }
+
+  /** Detect running↔suspended transitions and notify listeners (for the UI). */
+  private notifyIfRunning(): void {
+    const running = this.ctx?.state === "running";
+    if (running !== this.wasRunning) {
+      this.wasRunning = running;
+      this.onEnabledChange?.();
+    }
   }
 
   private ensurePad(): void {
@@ -277,6 +318,7 @@ export class DemoSynth {
 
   private scheduler(): void {
     if (!this.ctx) return;
+    this.notifyIfRunning(); // catch the async resume → running transition
     const stepDur = 60 / this.bpm / 4; // 16th notes
     while (this.nextStepTime < this.ctx.currentTime + 0.1) {
       this.scheduleStep(this.step, this.nextStepTime);
