@@ -11,6 +11,11 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  // ffmpeg.wasm ships its own module Worker; pre-bundling it breaks the worker
+  // URL resolution in dev, so let it load straight from node_modules.
+  optimizeDeps: {
+    exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/util"],
+  },
   server: {
     port: 5173,
     host: true,

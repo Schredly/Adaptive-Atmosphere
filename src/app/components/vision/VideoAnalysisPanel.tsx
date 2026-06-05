@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { poseService } from "@/services/vision/poseService";
 import { MotionAnalysisEngine } from "@/services/vision/motionAnalysisEngine";
+import { transcodeToMp4, isTranscodeSupported } from "@/services/vision/videoTranscoder";
 import { visionBus } from "@/services/vision/visionBus";
 import { read } from "@/services/atmosphere/atmosphereEngine";
 import { ATMOSPHERE_CONFIG } from "@/types/atmosphere";
@@ -73,6 +74,9 @@ export function VideoAnalysisPanel() {
   const rvfcRef = useRef<number | null>(null);
   const lastRecordRef = useRef(-1);
   const urlRef = useRef<string | null>(null);
+  const fileRef = useRef<File | null>(null);
+  const triedTranscodeRef = useRef(false);
+  const decodeErrorRef = useRef<() => void>(() => {});
 
   const [status, setStatus] = useState<Status>("empty");
   const [fileName, setFileName] = useState<string>("");
@@ -84,8 +88,56 @@ export function VideoAnalysisPanel() {
   const [patterns, setPatterns] = useState<ActivityPatterns>(NO_PATTERNS);
   const [modelError, setModelError] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [transcoding, setTranscoding] = useState(false);
+  const [transcodePct, setTranscodePct] = useState(0);
 
   const stateCfg = ATMOSPHERE_CONFIG[state];
+
+  // Convert a browser-undecodable clip (e.g. iPhone HEVC .mov) to H.264 in the
+  // browser, then load the result. Runs at most once per uploaded file.
+  const transcodeAndReload = async (file: File) => {
+    triedTranscodeRef.current = true;
+    setFileError(null);
+    setTranscoding(true);
+    setTranscodePct(0);
+    setStatus("loading");
+    try {
+      const blob = await transcodeToMp4(file, {
+        onProgress: (frac) => setTranscodePct(Math.round(frac * 100)),
+      });
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      const url = URL.createObjectURL(blob);
+      urlRef.current = url;
+      const video = videoRef.current;
+      if (video) {
+        video.src = url;
+        video.load();
+      }
+      setTranscoding(false);
+      setStatus("ready");
+    } catch {
+      setTranscoding(false);
+      setStatus("ready");
+      setFileError(
+        "Couldn't convert this video in the browser. Try opening the app in Safari, or convert the clip to H.264 MP4.",
+      );
+    }
+  };
+
+  // Keep the decode-error handler (used by the <video> error listener) pointed
+  // at fresh closures without re-binding the native listeners every render.
+  decodeErrorRef.current = () => {
+    const file = fileRef.current;
+    if (file && !triedTranscodeRef.current && isTranscodeSupported()) {
+      void transcodeAndReload(file);
+    } else {
+      stopLoop();
+      setFileError(
+        "This video couldn't be decoded. iPhone .mov files are often HEVC/H.265 — open the app in Safari, or convert the clip to H.264 MP4.",
+      );
+      setStatus("ready");
+    }
+  };
 
   // Process a single detected frame: overlay + readouts + timeline record.
   const processFrame = (video: HTMLVideoElement) => {
@@ -161,6 +213,8 @@ export function VideoAnalysisPanel() {
     if (urlRef.current) URL.revokeObjectURL(urlRef.current);
     const url = URL.createObjectURL(file);
     urlRef.current = url;
+    fileRef.current = file;
+    triedTranscodeRef.current = false;
     setFileName(file.name);
     setTimeline([]);
     lastRecordRef.current = -1;
@@ -169,6 +223,7 @@ export function VideoAnalysisPanel() {
     setStatus("loading");
     setModelError(null);
     setFileError(null);
+    setTranscoding(false);
 
     const video = videoRef.current;
     if (video) {
@@ -228,11 +283,8 @@ export function VideoAnalysisPanel() {
     const onError = () => {
       // Most common cause: an iPhone .mov encoded with HEVC/H.265, which Chrome
       // and Firefox can't decode (Safari can). Container is fine — codec isn't.
-      stopLoop();
-      setFileError(
-        "This video couldn't be decoded. iPhone .mov files are often HEVC/H.265 — open the app in Safari, or convert the clip to H.264 MP4.",
-      );
-      setStatus("ready");
+      // The handler (kept in a ref) tries an in-browser transcode first.
+      decodeErrorRef.current();
     };
 
     video.addEventListener("loadedmetadata", onMeta);
@@ -326,7 +378,7 @@ export function VideoAnalysisPanel() {
               <PoseOverlay active={hasVideo && poseService.ready} className="absolute inset-0 w-full h-full z-10 pointer-events-none" />
 
               {/* Empty state */}
-              {!hasVideo && (
+              {!hasVideo && !transcoding && (
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 text-white/40 hover:text-white/70 transition-colors"
@@ -340,6 +392,20 @@ export function VideoAnalysisPanel() {
                   </div>
                   <p>{status === "loading" ? "Loading pose model…" : "Upload a video to analyze · MP4, MOV, WebM"}</p>
                 </button>
+              )}
+
+              {/* Transcoding state (browser-side HEVC → H.264 conversion) */}
+              {transcoding && (
+                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 text-white/70 px-10 text-center">
+                  <div className="w-20 h-20 rounded-2xl bg-white/5 flex items-center justify-center border border-white/10">
+                    <Film className="w-10 h-10 text-[#8b5cf6] animate-pulse" />
+                  </div>
+                  <p>Converting video for your browser… {transcodePct}%</p>
+                  <div className="w-64 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6] transition-[width] duration-200" style={{ width: `${transcodePct}%` }} />
+                  </div>
+                  <p className="text-white/30 text-xs">iPhone HEVC clip detected — transcoding to H.264 locally, no upload.</p>
+                </div>
               )}
 
               {/* Live badges */}
