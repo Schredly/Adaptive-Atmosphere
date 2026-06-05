@@ -13,11 +13,7 @@
  * is false and the app stays in demo mode.
  */
 
-const CLIENT_ID = import.meta.env.VITE_SPOTIFY_CLIENT_ID ?? "";
-const REDIRECT_URI =
-  import.meta.env.VITE_SPOTIFY_REDIRECT_URI ?? `${window.location.origin}/spotify/callback`;
-const SCOPES =
-  import.meta.env.VITE_SPOTIFY_SCOPES ??
+const DEFAULT_SCOPES =
   "user-read-playback-state user-modify-playback-state streaming user-read-email user-read-private playlist-read-private playlist-read-collaborative";
 
 const AUTH_ENDPOINT = "https://accounts.spotify.com/authorize";
@@ -26,6 +22,46 @@ const TOKEN_ENDPOINT = "https://accounts.spotify.com/api/token";
 const LS_VERIFIER = "aa_spotify_verifier";
 const LS_STATE = "aa_spotify_state";
 const LS_TOKENS = "aa_spotify_tokens";
+const LS_CLIENT_ID = "aa_spotify_client_id";
+
+/**
+ * The Spotify app Client ID. Configurable at runtime from the UI (persisted to
+ * localStorage) so users don't have to touch `.env`; falls back to the build-time
+ * env var for deployments that bake it in.
+ */
+export function getClientId(): string {
+  try {
+    const stored = localStorage.getItem(LS_CLIENT_ID);
+    if (stored && stored.trim()) return stored.trim();
+  } catch {
+    /* localStorage unavailable */
+  }
+  return import.meta.env.VITE_SPOTIFY_CLIENT_ID ?? "";
+}
+
+/** Persist (or clear) the UI-configured Client ID. */
+export function setClientId(id: string): void {
+  const v = id.trim();
+  try {
+    if (v) localStorage.setItem(LS_CLIENT_ID, v);
+    else localStorage.removeItem(LS_CLIENT_ID);
+  } catch {
+    /* localStorage unavailable */
+  }
+}
+
+/**
+ * Redirect URI. Derived from the current origin so it always matches the page
+ * the user is on (avoids cross-origin token-exchange failures). This is the
+ * value the user must register in their Spotify app settings.
+ */
+export function getRedirectUri(): string {
+  return `${window.location.origin}/spotify/callback`;
+}
+
+function getScopes(): string {
+  return import.meta.env.VITE_SPOTIFY_SCOPES ?? DEFAULT_SCOPES;
+}
 
 interface StoredTokens {
   accessToken: string;
@@ -36,7 +72,7 @@ interface StoredTokens {
 }
 
 export function hasCredentials(): boolean {
-  return CLIENT_ID.length > 0;
+  return getClientId().length > 0;
 }
 
 // ── PKCE helpers ──────────────────────────────────────────────
@@ -83,7 +119,7 @@ export function isAuthenticated(): boolean {
 
 // ── Flow ──────────────────────────────────────────────────────
 export async function beginLogin(): Promise<void> {
-  if (!hasCredentials()) throw new Error("VITE_SPOTIFY_CLIENT_ID is not set.");
+  if (!hasCredentials()) throw new Error("Spotify Client ID is not set.");
   const verifier = randomString(96);
   const state = randomString(16);
   const challenge = base64UrlEncode(await sha256(verifier));
@@ -92,13 +128,13 @@ export async function beginLogin(): Promise<void> {
   localStorage.setItem(LS_STATE, state);
 
   const params = new URLSearchParams({
-    client_id: CLIENT_ID,
+    client_id: getClientId(),
     response_type: "code",
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: getRedirectUri(),
     code_challenge_method: "S256",
     code_challenge: challenge,
     state,
-    scope: SCOPES,
+    scope: getScopes(),
   });
   window.location.assign(`${AUTH_ENDPOINT}?${params.toString()}`);
 }
@@ -130,10 +166,10 @@ export async function handleRedirectCallback(): Promise<boolean> {
   }
 
   const body = new URLSearchParams({
-    client_id: CLIENT_ID,
+    client_id: getClientId(),
     grant_type: "authorization_code",
     code,
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: getRedirectUri(),
     code_verifier: verifier,
   });
 
@@ -171,7 +207,7 @@ function persistTokenResponse(json: {
 async function refresh(tokens: StoredTokens): Promise<StoredTokens | null> {
   if (!tokens.refreshToken) return null;
   const body = new URLSearchParams({
-    client_id: CLIENT_ID,
+    client_id: getClientId(),
     grant_type: "refresh_token",
     refresh_token: tokens.refreshToken,
   });

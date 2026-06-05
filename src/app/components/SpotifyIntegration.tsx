@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { useAtmosphereStore } from "@/store/useAtmosphereStore";
 import { spotifyManager } from "@/services/spotify/spotifyManager";
-import { hasCredentials } from "@/services/spotify/spotifyAuth";
+import { getClientId, setClientId, getRedirectUri } from "@/services/spotify/spotifyAuth";
 import { MUSIC_BUCKETS, BUCKET_META } from "@/types/spotify";
 import type { MusicBucket } from "@/types/spotify";
 
@@ -20,7 +20,10 @@ export function SpotifyIntegration() {
   // Global Spotify state.
   const mode = useAtmosphereStore((s) => s.spotifyMode);
   const user = useAtmosphereStore((s) => s.spotifyUser);
-  const connected = useAtmosphereStore((s) => s.spotifyConnected);
+  // "Logged in" = we actually have the user's Spotify profile (OAuth completed).
+  // The store's spotifyConnected flag defaults true for the demo, so it can't
+  // gate the live login UI.
+  const loggedIn = user != null;
   const devices = useAtmosphereStore((s) => s.spotifyDevices);
   const activeDeviceId = useAtmosphereStore((s) => s.activeDeviceId);
   const userPlaylists = useAtmosphereStore((s) => s.userPlaylists);
@@ -34,6 +37,12 @@ export function SpotifyIntegration() {
   const transition = useAtmosphereStore((s) => s.transition);
 
   const [volume, setVolume] = useState(80);
+  const [clientId, setClientIdInput] = useState(getClientId());
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const redirectUri = getRedirectUri();
+  const isLoopback = window.location.hostname === "127.0.0.1";
+  const hasClientId = clientId.trim().length > 0;
   const isLive = mode === "live";
   const isPlaying = playbackState === "playing" || playbackState === "transitioning";
   const progress = durationMs > 0 ? Math.min(100, (positionMs / durationMs) * 100) : 0;
@@ -47,6 +56,27 @@ export function SpotifyIntegration() {
   const onVolume = (v: number) => {
     setVolume(v);
     void spotifyManager.setVolume(v / 100);
+  };
+
+  const saveClientId = () => {
+    setClientId(clientId);
+    setSavedFlash(true);
+    window.setTimeout(() => setSavedFlash(false), 1500);
+  };
+
+  const connect = () => {
+    setClientId(clientId); // persist before redirecting
+    void spotifyManager.login();
+  };
+
+  const copyRedirect = async () => {
+    try {
+      await navigator.clipboard.writeText(redirectUri);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked */
+    }
   };
 
   const onMapping = (bucket: MusicBucket, playlistId: string) => {
@@ -85,19 +115,7 @@ export function SpotifyIntegration() {
             ))}
           </div>
 
-          {isLive && !connected && (
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => void spotifyManager.login()}
-              disabled={!hasCredentials()}
-              title={hasCredentials() ? "Log in with Spotify" : "Set VITE_SPOTIFY_CLIENT_ID to enable"}
-              className="px-5 py-2.5 bg-gradient-to-r from-[#1DB954] to-[#10b981] rounded-xl text-white shadow-lg shadow-[#1DB954]/20 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Connect Spotify
-            </motion.button>
-          )}
-          {isLive && connected && (
+          {isLive && loggedIn && (
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -109,6 +127,90 @@ export function SpotifyIntegration() {
           )}
         </div>
       </motion.div>
+
+      {/* Spotify connection setup — configure the Client ID right here, no .env */}
+      {isLive && !loggedIn && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 bg-gradient-to-br from-[#14141c]/70 to-[#1f2937]/40 backdrop-blur-xl rounded-3xl border border-white/10 p-6 shadow-2xl"
+        >
+          <div className="flex items-center gap-3 mb-5">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#1DB954] to-[#10b981] flex items-center justify-center">
+              <Music className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="text-white">Connect your Spotify</h3>
+              <p className="text-white/40 text-xs">
+                Paste your app's Client ID — you'll log in securely on Spotify's own page (never here).
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-6">
+            {/* Client ID + connect */}
+            <div className="space-y-3">
+              <label className="text-white/60 text-xs">Spotify Client ID</label>
+              <div className="flex gap-2">
+                <input
+                  value={clientId}
+                  onChange={(e) => setClientIdInput(e.target.value)}
+                  placeholder="e.g. 4f8c2b1a9d7e4f0c…"
+                  spellCheck={false}
+                  className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/90 font-mono focus:outline-none focus:border-[#10b981]/50"
+                />
+                <button
+                  onClick={saveClientId}
+                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-sm whitespace-nowrap"
+                >
+                  {savedFlash ? "Saved ✓" : "Save"}
+                </button>
+              </div>
+              <motion.button
+                whileHover={{ scale: hasClientId ? 1.02 : 1 }}
+                whileTap={{ scale: hasClientId ? 0.98 : 1 }}
+                onClick={connect}
+                disabled={!hasClientId}
+                className="w-full px-4 py-2.5 bg-gradient-to-r from-[#1DB954] to-[#10b981] rounded-xl text-white text-sm shadow-lg shadow-[#1DB954]/20 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Connect Spotify
+              </motion.button>
+              <p className="text-white/30 text-xs">Spotify Premium is required for in-browser playback.</p>
+            </div>
+
+            {/* Redirect URI + steps */}
+            <div className="space-y-3">
+              <label className="text-white/60 text-xs">Redirect URI — add this to your Spotify app</label>
+              <div className="flex gap-2">
+                <code
+                  className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-xs text-[#10b981] font-mono truncate"
+                  title={redirectUri}
+                >
+                  {redirectUri}
+                </code>
+                <button
+                  onClick={copyRedirect}
+                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-xs whitespace-nowrap"
+                >
+                  {copied ? "Copied ✓" : "Copy"}
+                </button>
+              </div>
+              <ol className="text-white/40 text-xs space-y-1 list-decimal list-inside">
+                <li>Create an app at developer.spotify.com/dashboard</li>
+                <li>Add the Redirect URI above; enable Web API + Web Playback SDK</li>
+                <li>Settings → User Management → add your Spotify account email</li>
+                <li>Paste the Client ID and hit Connect</li>
+              </ol>
+              {!isLoopback && (
+                <p className="text-amber-300/80 text-xs">
+                  Tip: open the app at <span className="font-mono">http://127.0.0.1:5173</span> — Spotify rejects
+                  “localhost” redirect URIs.
+                </p>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       <div className="grid grid-cols-3 gap-6">
         {/* Now Playing */}
@@ -130,9 +232,9 @@ export function SpotifyIntegration() {
                 <div>
                   <h2 className="text-xl text-white">Now Playing</h2>
                   <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${connected || !isLive ? "bg-[#10b981] animate-pulse shadow-lg shadow-[#10b981]/50" : "bg-white/20"}`} />
+                    <div className={`w-2 h-2 rounded-full ${loggedIn || !isLive ? "bg-[#10b981] animate-pulse shadow-lg shadow-[#10b981]/50" : "bg-white/20"}`} />
                     <span className="text-[#10b981] text-sm">
-                      {isLive ? (connected ? `Spotify · ${user?.displayName ?? ""}` : "Spotify · not connected") : "Demo mode"}
+                      {isLive ? (loggedIn ? `Spotify · ${user?.displayName ?? ""}` : "Spotify · not connected") : "Demo mode"}
                     </span>
                   </div>
                 </div>
@@ -281,7 +383,7 @@ export function SpotifyIntegration() {
 
               {isLive && userPlaylists.length === 0 && (
                 <button onClick={() => void spotifyManager.loadPlaylists()} className="mt-4 w-full text-xs text-white/50 hover:text-white/80 flex items-center justify-center gap-2 py-2">
-                  <RefreshCw className="w-3.5 h-3.5" /> {connected ? "Load my playlists" : "Connect Spotify to map playlists"}
+                  <RefreshCw className="w-3.5 h-3.5" /> {loggedIn ? "Load my playlists" : "Connect Spotify to map playlists"}
                 </button>
               )}
             </div>
@@ -306,7 +408,7 @@ export function SpotifyIntegration() {
               {!isLive ? (
                 <p className="text-white/40 text-sm py-2">Demo mode plays locally. Switch to Spotify to manage devices.</p>
               ) : devices.length === 0 ? (
-                <p className="text-white/40 text-sm py-2">{connected ? "No active devices found. Open Spotify on a device." : "Connect Spotify to list devices."}</p>
+                <p className="text-white/40 text-sm py-2">{loggedIn ? "No active devices found. Open Spotify on a device." : "Connect Spotify to list devices."}</p>
               ) : (
                 <div className="space-y-2">
                   {devices.map((d) => {

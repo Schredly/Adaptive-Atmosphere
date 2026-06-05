@@ -124,8 +124,15 @@ rather than replacing it. Camera access requires **HTTPS or `localhost`**.
 
 `spotifyService.ts` maps the live energy/state onto a playlist + track. It ships
 as a deterministic mock (see `catalog.ts`) shaped like a thin wrapper over the
-Spotify Web API, so a real integration drops in behind the same store fields. The
-OAuth (PKCE) authorize-URL builder is wired and reads credentials from env.
+Spotify Web API, so a real integration drops in behind the same store fields.
+
+To go live, open the **Spotify** page, switch to **Spotify** mode, and paste your
+app's **Client ID** right in the UI (no `.env` needed — it's saved to the browser).
+The page shows the exact **Redirect URI** to register, then **Connect** runs the
+OAuth Authorization-Code-with-PKCE flow — you log in on Spotify's own page, never
+here. Premium is required for in-browser playback via the Web Playback SDK. Open
+the app at `http://127.0.0.1:5173` (Spotify rejects `localhost` redirect URIs).
+`VITE_SPOTIFY_CLIENT_ID` still works as a build-time fallback for deployments.
 
 ---
 
@@ -138,9 +145,11 @@ All browser-exposed vars must be `VITE_`-prefixed. See `.env.example`.
 | `VITE_MOTION_SOURCE` | `mock` | `mock` simulation or `live` MediaPipe Pose |
 | `VITE_POSE_MODEL_URL` | Google CDN | MediaPipe pose-landmarker `.task` model |
 | `VITE_POSE_DELEGATE` | `GPU` | Pose backend: `GPU` (auto-falls-back to CPU) or `CPU` |
-| `VITE_SPOTIFY_CLIENT_ID` | — | Spotify app client id (OAuth PKCE) |
-| `VITE_SPOTIFY_REDIRECT_URI` | `…/spotify/callback` | OAuth redirect |
+| `VITE_SPOTIFY_CLIENT_ID` | — | Optional build-time fallback; normally set in the UI |
 | `VITE_SPOTIFY_SCOPES` | playback scopes | Requested OAuth scopes |
+
+> The redirect URI is derived from the page origin (`<origin>/spotify/callback`),
+> so `VITE_SPOTIFY_REDIRECT_URI` is no longer needed.
 
 Mock mode needs **none** of these.
 
