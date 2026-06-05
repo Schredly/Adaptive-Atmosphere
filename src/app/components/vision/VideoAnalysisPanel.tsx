@@ -83,6 +83,7 @@ export function VideoAnalysisPanel() {
   const [state, setState] = useState<AtmosphereState>("idle");
   const [patterns, setPatterns] = useState<ActivityPatterns>(NO_PATTERNS);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
 
   const stateCfg = ATMOSPHERE_CONFIG[state];
 
@@ -167,6 +168,7 @@ export function VideoAnalysisPanel() {
     poseService.resetClock();
     setStatus("loading");
     setModelError(null);
+    setFileError(null);
 
     const video = videoRef.current;
     if (video) {
@@ -223,6 +225,15 @@ export function VideoAnalysisPanel() {
       }
     };
     const onTime = () => setCurrentTime(video.currentTime);
+    const onError = () => {
+      // Most common cause: an iPhone .mov encoded with HEVC/H.265, which Chrome
+      // and Firefox can't decode (Safari can). Container is fine — codec isn't.
+      stopLoop();
+      setFileError(
+        "This video couldn't be decoded. iPhone .mov files are often HEVC/H.265 — open the app in Safari, or convert the clip to H.264 MP4.",
+      );
+      setStatus("ready");
+    };
 
     video.addEventListener("loadedmetadata", onMeta);
     video.addEventListener("play", onPlay);
@@ -230,6 +241,7 @@ export function VideoAnalysisPanel() {
     video.addEventListener("ended", onEnded);
     video.addEventListener("seeked", onSeeked);
     video.addEventListener("timeupdate", onTime);
+    video.addEventListener("error", onError);
     return () => {
       video.removeEventListener("loadedmetadata", onMeta);
       video.removeEventListener("play", onPlay);
@@ -237,6 +249,7 @@ export function VideoAnalysisPanel() {
       video.removeEventListener("ended", onEnded);
       video.removeEventListener("seeked", onSeeked);
       video.removeEventListener("timeupdate", onTime);
+      video.removeEventListener("error", onError);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -276,14 +289,14 @@ export function VideoAnalysisPanel() {
             </div>
             <div>
               <h2 className="text-xl text-white">Video Analysis</h2>
-              <p className="text-white/40 text-sm">Upload footage · replay analysis · scrub the atmosphere timeline</p>
+              <p className="text-white/40 text-sm">MP4 · MOV · WebM · replay analysis · scrub the atmosphere timeline</p>
             </div>
           </div>
 
           <input
             ref={fileInputRef}
             type="file"
-            accept="video/mp4,video/*"
+            accept="video/*,.mp4,.mov,.m4v,.webm,.ogv"
             className="hidden"
             onChange={(e) => {
               const file = e.target.files?.[0];
@@ -297,7 +310,7 @@ export function VideoAnalysisPanel() {
             className="px-5 py-2.5 bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6] rounded-xl text-white flex items-center gap-2 shadow-lg shadow-[#3b82f6]/20"
           >
             <Upload className="w-4 h-4" />
-            {hasVideo ? "Replace Video" : "Upload MP4"}
+            {hasVideo ? "Replace Video" : "Upload Video"}
           </motion.button>
         </div>
 
@@ -325,7 +338,7 @@ export function VideoAnalysisPanel() {
                       <Upload className="w-10 h-10" />
                     )}
                   </div>
-                  <p>{status === "loading" ? "Loading pose model…" : "Upload an MP4 to analyze"}</p>
+                  <p>{status === "loading" ? "Loading pose model…" : "Upload a video to analyze · MP4, MOV, WebM"}</p>
                 </button>
               )}
 
@@ -345,9 +358,15 @@ export function VideoAnalysisPanel() {
                 </div>
               )}
 
-              {modelError && hasVideo && (
+              {modelError && hasVideo && !fileError && (
                 <div className="absolute bottom-16 left-4 right-4 z-30 text-amber-300/80 text-xs bg-black/70 px-3 py-1.5 rounded-lg border border-amber-500/30">
                   {modelError} Playback continues without skeleton tracking.
+                </div>
+              )}
+
+              {fileError && (
+                <div className="absolute inset-x-6 top-1/2 -translate-y-1/2 z-40 text-red-200 text-sm bg-black/85 px-4 py-3 rounded-xl border border-red-500/40 text-center">
+                  {fileError}
                 </div>
               )}
 
