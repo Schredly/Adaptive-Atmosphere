@@ -53,6 +53,8 @@ class SpotifyManager {
   private cooldownTimer: number | null = null;
   private lastTrackId: string | null = null;
   private initializing = false;
+  /** Set when the user manually pauses, so orchestration won't auto-resume. */
+  private userPaused = false;
 
   private get store() {
     return useAtmosphereStore.getState();
@@ -101,6 +103,7 @@ class SpotifyManager {
 
   async setMode(mode: SpotifyMode): Promise<void> {
     this.store.setSpotifyMode(mode);
+    this.userPaused = false;
     this.clearTimers();
     await this.swapController(mode);
     if (mode === "demo") await this.applyForState(this.store.atmosphereState, true);
@@ -173,6 +176,9 @@ class SpotifyManager {
     confidence = this.store.confidenceScore,
   ): Promise<void> {
     if (!this.controller) return;
+    // Respect a manual pause: the engine must not auto-resume/transition until the
+    // user presses play again (seed calls — init/mode-switch — bypass this).
+    if (this.userPaused && !seed) return;
     const s = this.store;
     const snap = this.controller.snapshot();
 
@@ -282,12 +288,16 @@ class SpotifyManager {
     if (!this.controller) return;
     const snap = this.controller.snapshot();
     if (snap.isPlaying) {
+      // Manual pause — latch it so the orchestration loop doesn't auto-resume.
+      this.userPaused = true;
       await this.controller.pause();
       this.store.setPlaybackState("paused");
     } else if (snap.track) {
+      this.userPaused = false;
       await this.controller.resume();
       this.store.setPlaybackState("playing");
     } else {
+      this.userPaused = false;
       await this.applyForState(this.store.atmosphereState, true);
     }
   }
