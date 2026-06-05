@@ -19,13 +19,32 @@ const CORE_BASE = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm";
 
 let ffmpeg: FFmpeg | null = null;
 let loadPromise: Promise<boolean> | null = null;
+/** Ring buffer of recent ffmpeg log lines, for surfacing failure reasons. */
+const logTail: string[] = [];
+
+export class TranscodeError extends Error {
+  constructor(
+    message: string,
+    readonly kind: "out-of-memory" | "failed",
+    readonly detail: string,
+  ) {
+    super(message);
+    this.name = "TranscodeError";
+  }
+}
 
 export function isTranscodeSupported(): boolean {
   return typeof WebAssembly === "object" && typeof Worker !== "undefined";
 }
 
 async function ensureLoaded(): Promise<FFmpeg> {
-  if (!ffmpeg) ffmpeg = new FFmpeg();
+  if (!ffmpeg) {
+    ffmpeg = new FFmpeg();
+    ffmpeg.on("log", ({ message }) => {
+      logTail.push(message);
+      if (logTail.length > 80) logTail.shift();
+    });
+  }
   if (!loadPromise) {
     console.debug("[transcoder] downloading core (~32MB)…");
     loadPromise = (async () => {
@@ -65,12 +84,15 @@ export async function transcodeToMp4(file: File, opts: TranscodeOptions = {}): P
     if (Number.isFinite(progress)) opts.onProgress?.(Math.max(0, Math.min(1, progress)));
   };
   f.on("progress", onProgress);
+  logTail.length = 0;
   const ext = file.name.match(/\.[a-z0-9]+$/i)?.[0] ?? ".mov";
   const input = `input${ext}`;
   try {
     await f.writeFile(input, await fetchFile(file));
     console.debug("[transcoder] exec start", input);
-    await f.exec([
+    // exec resolves with ffmpeg's exit code (it does NOT reject on failure).
+    const code = await f.exec([
+      "-y",
       "-i", input,
       "-vf", "scale='min(640,iw)':-2",
       "-r", "15",
@@ -81,10 +103,30 @@ export async function transcodeToMp4(file: File, opts: TranscodeOptions = {}): P
       "-movflags", "+faststart",
       "output.mp4",
     ]);
+    if (code !== 0) throw new Error(`ffmpeg exited with code ${code}`);
     console.debug("[transcoder] exec done, reading output");
     const data = await f.readFile("output.mp4");
     // data is a Uint8Array; wrap in a Blob for an object URL.
     return new Blob([data as unknown as BlobPart], { type: "video/mp4" });
+  } catch (e) {
+    const detail = logTail.slice(-15).join("\n");
+    console.error(`[transcoder] conversion failed: ${String(e)}\n${detail}`);
+    const oom = /(out of memory|memory access|table index is out of|abort|allocat|enomem)/i.test(
+      `${detail} ${String(e)}`,
+    );
+    // Recover: a wedged instance must not poison the next attempt.
+    try {
+      f.terminate();
+    } catch {
+      /* already dead */
+    }
+    ffmpeg = null;
+    loadPromise = null;
+    throw new TranscodeError(
+      oom ? "Out of memory during conversion" : "Conversion failed",
+      oom ? "out-of-memory" : "failed",
+      detail,
+    );
   } finally {
     f.off("progress", onProgress);
     // Best-effort cleanup of the virtual FS so repeated conversions don't grow it.
@@ -92,7 +134,7 @@ export async function transcodeToMp4(file: File, opts: TranscodeOptions = {}): P
       await f.deleteFile(input);
       await f.deleteFile("output.mp4");
     } catch {
-      /* file may not exist if exec threw */
+      /* file may not exist / instance terminated */
     }
   }
 }

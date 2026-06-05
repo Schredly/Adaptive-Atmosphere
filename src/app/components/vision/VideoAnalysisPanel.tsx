@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { poseService } from "@/services/vision/poseService";
 import { MotionAnalysisEngine } from "@/services/vision/motionAnalysisEngine";
-import { transcodeToMp4, isTranscodeSupported } from "@/services/vision/videoTranscoder";
+import { transcodeToMp4, isTranscodeSupported, TranscodeError } from "@/services/vision/videoTranscoder";
 import { visionBus } from "@/services/vision/visionBus";
 import { read } from "@/services/atmosphere/atmosphereEngine";
 import { ATMOSPHERE_CONFIG } from "@/types/atmosphere";
@@ -128,11 +128,14 @@ export function VideoAnalysisPanel() {
       }
       setTranscoding(false);
       setStatus("ready");
-    } catch {
+    } catch (err) {
       setTranscoding(false);
       setStatus("ready");
+      const oom = err instanceof TranscodeError && err.kind === "out-of-memory";
       setFileError(
-        "Couldn't convert this video in the browser. Try opening the app in Safari, or convert the clip to H.264 MP4.",
+        oom
+          ? "This clip is too large to convert in the browser (out of memory). Try a shorter clip or a lower resolution, or open the app in Safari (which plays HEVC directly)."
+          : "Couldn't convert this video in the browser. Re-uploading will retry with a fresh converter. If it persists, open the app in Safari or convert the clip to H.264 MP4.",
       );
     }
   };
