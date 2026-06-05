@@ -165,8 +165,10 @@ const DEFAULT_SETTINGS: UISettings = {
   motionThreshold: 65,
   idleTimeout: 30,
   transitionAggressiveness: 50,
-  confidenceThreshold: 85,
-  stateCooldown: 15,
+  // Live pose reads land ~65-88% confidence; keep the gate below that so real
+  // camera/video motion can actually drive transitions (mock reads ~90%+).
+  confidenceThreshold: 60,
+  stateCooldown: 6,
   glowIntensity: 80,
   animationIntensity: 70,
 };

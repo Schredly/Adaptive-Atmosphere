@@ -11,7 +11,10 @@ import { ATMOSPHERE_CONFIG } from "@/types/atmosphere";
 import type { AtmosphereState } from "@/types/atmosphere";
 import type { ActivityPatterns, MotionAnalysis, MotionSample } from "@/types/motion";
 import { NO_PATTERNS } from "@/types/motion";
+import { BUCKET_META } from "@/types/spotify";
+import { useAtmosphereStore } from "@/store/useAtmosphereStore";
 import { PoseOverlay } from "./PoseOverlay";
+import { SoundControl } from "../SoundControl";
 
 /**
  * VideoAnalysisPanel — upload an MP4 and run the real computer-vision pipeline
@@ -19,9 +22,11 @@ import { PoseOverlay } from "./PoseOverlay";
  *
  * Plays the file, runs MediaPipe Pose + motionAnalysisEngine on each frame,
  * draws the cinematic PoseOverlay, and records an atmosphere timeline you can
- * scrub. Self-contained: it drives the visionBus (for the overlay) and its own
- * local readouts without touching the global store, so it never fights the live
- * Dashboard engine.
+ * scrub. While the video plays it also takes over the global motion source
+ * ("live") and feeds the engine throttled samples, so the atmosphere → music
+ * orchestration scores the uploaded clip; on pause/stop/unmount it hands motion
+ * back to the simulator ("mock"). The SoundControl + music readout let you hear
+ * and see the selected demo audio without leaving the page.
  */
 
 interface TimelineSample {
@@ -77,6 +82,7 @@ export function VideoAnalysisPanel() {
   const fileRef = useRef<File | null>(null);
   const triedTranscodeRef = useRef(false);
   const decodeErrorRef = useRef<() => void>(() => {});
+  const lastStoreRef = useRef(0);
 
   const [status, setStatus] = useState<Status>("empty");
   const [fileName, setFileName] = useState<string>("");
@@ -90,6 +96,10 @@ export function VideoAnalysisPanel() {
   const [fileError, setFileError] = useState<string | null>(null);
   const [transcoding, setTranscoding] = useState(false);
   const [transcodePct, setTranscodePct] = useState(0);
+
+  // Global music state — driven by this panel's analysis while a video plays.
+  const activeBucket = useAtmosphereStore((s) => s.activeBucket);
+  const musicTrack = useAtmosphereStore((s) => s.currentTrack);
 
   const stateCfg = ATMOSPHERE_CONFIG[state];
 
@@ -151,6 +161,15 @@ export function VideoAnalysisPanel() {
     setEnergy(a.energy);
     setState(s);
     setPatterns(a.patterns);
+
+    // Feed the global engine (throttled ~8Hz) so the atmosphere → music
+    // orchestration adapts to the uploaded video while it plays. The engine
+    // reads these because we set motionSource to "live" on play.
+    const now = performance.now();
+    if (now - lastStoreRef.current >= 120) {
+      lastStoreRef.current = now;
+      useAtmosphereStore.getState().ingestMotionSample(sample);
+    }
 
     // Record at ~10Hz of video time.
     const vt = video.currentTime;
@@ -262,14 +281,19 @@ export function VideoAnalysisPanel() {
     const onPlay = () => {
       setStatus("playing");
       poseService.resetClock();
+      // Hand the global engine this video's motion so the music adapts to it.
+      useAtmosphereStore.getState().setMotionSource("live");
       startLoop();
     };
     const onPause = () => {
       stopLoop();
+      // Stop driving the engine from a frozen frame; let the simulator resume.
+      useAtmosphereStore.getState().setMotionSource("mock");
       setStatus((s) => (s === "empty" || s === "loading" ? s : "paused"));
     };
     const onEnded = () => {
       stopLoop();
+      useAtmosphereStore.getState().setMotionSource("mock");
       setStatus("paused");
     };
     const onSeeked = () => {
@@ -312,6 +336,8 @@ export function VideoAnalysisPanel() {
       stopLoop();
       visionBus.clear();
       poseService.resetClock();
+      // Hand motion back to the simulator so the rest of the app stays live.
+      useAtmosphereStore.getState().setMotionSource("mock");
       if (urlRef.current) URL.revokeObjectURL(urlRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -475,6 +501,20 @@ export function VideoAnalysisPanel() {
                   <span className="text-2xl text-white font-light">{stateCfg.label}</span>
                 </div>
               </div>
+            </div>
+
+            <div className="bg-black/20 rounded-2xl border border-white/5 p-5">
+              <p className="text-white/40 text-xs mb-3">ADAPTIVE MUSIC</p>
+              {activeBucket ? (
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: BUCKET_META[activeBucket].color, boxShadow: `0 0 12px ${BUCKET_META[activeBucket].color}` }} />
+                  <span className="text-white">{BUCKET_META[activeBucket].label}</span>
+                  {musicTrack && <span className="text-white/40 text-xs truncate">· {musicTrack.title}</span>}
+                </div>
+              ) : (
+                <p className="text-white/40 text-sm mb-3">{analysing ? "Selecting music…" : "Play the video to score it"}</p>
+              )}
+              <SoundControl />
             </div>
 
             <div className="bg-black/20 rounded-2xl border border-white/5 p-5">
