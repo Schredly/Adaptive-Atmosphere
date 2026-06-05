@@ -94,6 +94,7 @@ export function VideoAnalysisPanel() {
   const [patterns, setPatterns] = useState<ActivityPatterns>(NO_PATTERNS);
   const [modelError, setModelError] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [fileErrorDetail, setFileErrorDetail] = useState<string | null>(null);
   const [transcoding, setTranscoding] = useState(false);
   const [transcodePct, setTranscodePct] = useState(0);
   const [transcodePhase, setTranscodePhase] = useState<"loading" | "converting">("loading");
@@ -109,6 +110,7 @@ export function VideoAnalysisPanel() {
   const transcodeAndReload = async (file: File) => {
     triedTranscodeRef.current = true;
     setFileError(null);
+    setFileErrorDetail(null);
     setTranscoding(true);
     setTranscodePct(0);
     setTranscodePhase("loading");
@@ -137,6 +139,9 @@ export function VideoAnalysisPanel() {
           ? "This clip is too large to convert in the browser (out of memory). Try a shorter clip or a lower resolution, or open the app in Safari (which plays HEVC directly)."
           : "Couldn't convert this video in the browser. Re-uploading will retry with a fresh converter. If it persists, open the app in Safari or convert the clip to H.264 MP4.",
       );
+      // Surface ffmpeg's actual reason (last log lines) so failures are diagnosable.
+      const detail = err instanceof TranscodeError ? err.detail : String(err);
+      setFileErrorDetail(detail ? detail.split("\n").slice(-3).join("\n") : null);
     }
   };
 
@@ -248,6 +253,7 @@ export function VideoAnalysisPanel() {
     setStatus("loading");
     setModelError(null);
     setFileError(null);
+    setFileErrorDetail(null);
     setTranscoding(false);
 
     const video = videoRef.current;
@@ -475,8 +481,13 @@ export function VideoAnalysisPanel() {
               )}
 
               {fileError && (
-                <div className="absolute inset-x-6 top-1/2 -translate-y-1/2 z-40 text-red-200 text-sm bg-black/85 px-4 py-3 rounded-xl border border-red-500/40 text-center">
-                  {fileError}
+                <div className="absolute inset-x-6 top-1/2 -translate-y-1/2 z-40 bg-black/85 px-4 py-3 rounded-xl border border-red-500/40">
+                  <p className="text-red-200 text-sm text-center">{fileError}</p>
+                  {fileErrorDetail && (
+                    <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-words text-[10px] leading-snug text-white/40 font-mono bg-black/40 rounded-md p-2">
+                      {fileErrorDetail}
+                    </pre>
+                  )}
                 </div>
               )}
 
