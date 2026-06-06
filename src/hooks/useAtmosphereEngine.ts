@@ -36,12 +36,17 @@ import type { MotionSample } from "@/types/motion";
 const TICK_MS = 1300;
 /** Minimum gap between LLM calls when nothing changes (ms). */
 const AI_MIN_INTERVAL = 6000;
+/** A new mood must persist this long before we commit to it (anti-flicker). */
+const MOOD_HYSTERESIS_MS = 3000;
 
 export function useAtmosphereEngine() {
   const simulatorRef = useRef(createMotionSimulator(42));
   const prevSampleRef = useRef<MotionSample | undefined>(undefined);
   const prevStateRef = useRef<AtmosphereState | undefined>(undefined);
   const lastAiRef = useRef(0);
+  // Committed (smoothed) mood + the pending candidate, for hysteresis.
+  const committedStateRef = useRef<AtmosphereState | undefined>(undefined);
+  const candidateRef = useRef<{ state: AtmosphereState; since: number } | null>(null);
 
   // Seed the AI feed once on mount.
   useEffect(() => {
@@ -87,22 +92,43 @@ export function useAtmosphereEngine() {
         environmentMode: store.environmentMode,
       };
 
-      // Learned override: if the user has corrected a similar clip before, apply
-      // that mood (live sources only — the mock simulator shouldn't be steered).
-      let state = ruleState;
-      let rule = describeTransition(
-        ruleState,
-        sample.energy,
-        sample.velocity ?? sample.intensity,
-        sample.patterns,
-      );
+      // Desired mood = learned override (live sources only) or the rule call.
+      let desired = ruleState;
+      let learnedHit = false;
       if (store.motionSource === "live") {
         const learned = lookupLearnedMood(summary);
         if (learned && learned !== ruleState) {
-          state = learned;
-          rule = `Learned from your feedback → ${learned}`;
+          desired = learned;
+          learnedHit = true;
         }
       }
+
+      // Hysteresis: only switch the committed mood once the new one has held for
+      // MOOD_HYSTERESIS_MS, so a brief energy blip doesn't flip the playlist.
+      const nowMs = Date.now();
+      let state = committedStateRef.current ?? desired;
+      if (desired === state) {
+        candidateRef.current = null;
+      } else {
+        if (!candidateRef.current || candidateRef.current.state !== desired) {
+          candidateRef.current = { state: desired, since: nowMs };
+        }
+        if (nowMs - candidateRef.current.since >= MOOD_HYSTERESIS_MS) {
+          state = desired;
+          candidateRef.current = null;
+        }
+      }
+      committedStateRef.current = state;
+
+      const rule =
+        learnedHit && state === desired
+          ? `Learned from your feedback → ${state}`
+          : describeTransition(
+              state,
+              sample.energy,
+              sample.velocity ?? sample.intensity,
+              sample.patterns,
+            );
       store.applyAtmosphere(state, confidence, rule);
 
       // 3. Metrics.

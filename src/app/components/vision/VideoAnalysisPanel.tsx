@@ -110,6 +110,8 @@ export function VideoAnalysisPanel() {
   const moodReason = useAtmosphereStore((s) => s.transitionRule);
   const musicReason = useAtmosphereStore((s) => s.transition.reason);
   const aiRead = useAtmosphereStore((s) => s.aiRead);
+  const holdSeconds = useAtmosphereStore((s) => s.settings.stateCooldown);
+  const updateSettings = useAtmosphereStore((s) => s.updateSettings);
 
   const [correctMood, setCorrectMood] = useState<string>("");
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
@@ -661,6 +663,24 @@ export function VideoAnalysisPanel() {
               )}
 
               <SoundControl />
+
+              {/* Playlist hold — how long a mood/playlist stays before it can change */}
+              <div className="mt-4 pt-3 border-t border-white/5">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-white/40 text-[10px] uppercase tracking-wide">Playlist hold</span>
+                  <span className="text-white/60 text-xs font-mono">{holdSeconds}s</span>
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={60}
+                  step={1}
+                  value={holdSeconds}
+                  onChange={(e) => updateSettings({ stateCooldown: Number(e.target.value) })}
+                  className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                />
+                <p className="text-white/25 text-[10px] mt-1">Minimum time before the playlist can change</p>
+              </div>
             </div>
 
             {/* Training feedback — label the call to improve the model over time */}

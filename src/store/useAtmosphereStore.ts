@@ -172,7 +172,9 @@ const DEFAULT_SETTINGS: UISettings = {
   // Live pose reads land ~65-88% confidence; keep the gate below that so real
   // camera/video motion can actually drive transitions (mock reads ~90%+).
   confidenceThreshold: 60,
-  stateCooldown: 6,
+  // Minimum seconds a playlist holds before it can change — the main knob for
+  // how stable vs. reactive the music feels.
+  stateCooldown: 20,
   glowIntensity: 80,
   animationIntensity: 70,
 };
