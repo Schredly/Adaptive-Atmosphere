@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { Upload, Play, Pause, Film, Brain } from "lucide-react";
+import { Upload, Play, Pause, Film, Brain, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { poseService } from "@/services/vision/poseService";
@@ -98,6 +98,8 @@ export function VideoAnalysisPanel() {
   const [transcoding, setTranscoding] = useState(false);
   const [transcodePct, setTranscodePct] = useState(0);
   const [transcodePhase, setTranscodePhase] = useState<"loading" | "converting">("loading");
+  // Mute the uploaded video's own audio by default so the adaptive music is audible.
+  const [videoMuted, setVideoMuted] = useState(true);
 
   // Global music state — driven by this panel's analysis while a video plays.
   const activeBucket = useAtmosphereStore((s) => s.activeBucket);
@@ -368,6 +370,12 @@ export function VideoAnalysisPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Keep the <video> element's muted property in sync (React's `muted` prop alone
+  // is unreliable — it only sets the initial value).
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.muted = videoMuted;
+  }, [videoMuted]);
+
   const hasVideo = status !== "empty" && status !== "loading";
   const analysing = status === "playing";
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -424,6 +432,7 @@ export function VideoAnalysisPanel() {
               <video
                 ref={videoRef}
                 playsInline
+                muted={videoMuted}
                 className="absolute inset-0 w-full h-full object-cover z-0"
               />
               <PoseOverlay active={hasVideo && poseService.ready} className="absolute inset-0 w-full h-full z-10 pointer-events-none" />
@@ -525,7 +534,17 @@ export function VideoAnalysisPanel() {
                       className="flex-1 h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
                     />
                     <span className="text-white/40 text-xs font-mono w-10">{fmt(duration)}</span>
+                    <button
+                      onClick={() => setVideoMuted((m) => !m)}
+                      title={videoMuted ? "Unmute video audio" : "Mute video audio"}
+                      className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 flex-shrink-0"
+                    >
+                      {videoMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                    </button>
                   </div>
+                  {videoMuted && (
+                    <p className="text-white/30 text-[10px] mt-1.5 text-right pr-1">Video muted — you're hearing the adaptive music</p>
+                  )}
                 </div>
               )}
             </div>
