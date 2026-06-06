@@ -300,6 +300,17 @@ export function VideoAnalysisPanel() {
     lastRecordRef.current = -1;
     analyzerRef.current.reset();
     poseService.resetClock();
+    // Start the vision pipeline fresh: clear the last clip's pose overlay and
+    // reset the readouts so nothing from the previous video lingers.
+    visionBus.clear();
+    setEnergy(0);
+    setState("idle");
+    setPatterns(NO_PATTERNS);
+    setDuration(0);
+    setCurrentTime(0);
+    const store = useAtmosphereStore.getState();
+    store.setAIRead(null);
+    store.setMotionSource("mock"); // halt scoring until the new clip plays
     setStatus("loading");
     setModelError(null);
     setFileError(null);
