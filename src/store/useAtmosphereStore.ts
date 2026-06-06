@@ -216,7 +216,8 @@ export const useAtmosphereStore = create<AtmosphereStore>()(
   activePlaylist: null,
   activeBucket: null,
   currentTrack: null,
-  playbackState: "playing",
+  // Nothing plays until a real analysis source (video/camera) is active.
+  playbackState: "paused",
   currentBpm: 112,
   trackPositionMs: 0,
   trackDurationMs: 0,

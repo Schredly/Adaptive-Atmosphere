@@ -20,6 +20,13 @@ import { useAtmosphereStore } from "@/store/useAtmosphereStore";
 
 export function useSpotifyOrchestration() {
   const atmosphereState = useAtmosphereStore((s) => s.atmosphereState);
+  const motionSource = useAtmosphereStore((s) => s.motionSource);
+
+  // Music only runs when there's a real analysis source (uploaded video or live
+  // camera). "mock" = no input → stop, so playlists don't churn on their own.
+  useEffect(() => {
+    spotifyManager.setInputActive(motionSource === "live");
+  }, [motionSource]);
 
   // Boot: handle redirect, init manager, periodic re-evaluation.
   useEffect(() => {

@@ -55,6 +55,11 @@ class SpotifyManager {
   private initializing = false;
   /** Set when the user manually pauses, so orchestration won't auto-resume. */
   private userPaused = false;
+  /**
+   * True when there's no live analysis source (no video/camera). Starts true so
+   * nothing plays until input arrives (avoids the mock simulator churning music).
+   */
+  private noInput = true;
 
   private get store() {
     return useAtmosphereStore.getState();
@@ -66,10 +71,9 @@ class SpotifyManager {
     this.initializing = true;
     try {
       await this.swapController(mode);
-      // In demo mode (or live with mappings) kickstart so the UI is alive.
-      if (mode === "demo") {
-        await this.applyForState(this.store.atmosphereState, true);
-      } else if (auth.isAuthenticated()) {
+      // Don't auto-play on boot: music starts only once a real analysis source
+      // (uploaded video or live camera) becomes active, via setInputActive().
+      if (mode === "live" && auth.isAuthenticated()) {
         await this.refreshProfile();
       }
     } finally {
@@ -106,7 +110,10 @@ class SpotifyManager {
     this.userPaused = false;
     this.clearTimers();
     await this.swapController(mode);
-    if (mode === "demo") await this.applyForState(this.store.atmosphereState, true);
+    // Resume scoring only if a source is already active; otherwise stay stopped.
+    if (mode === "demo" && !this.noInput) {
+      await this.applyForState(this.store.atmosphereState, true);
+    }
   }
 
   // ── Auth / account ─────────────────────────────────────────
@@ -169,6 +176,34 @@ class SpotifyManager {
     await this.applyForState(state, false, energy, confidence);
   }
 
+  /**
+   * Tell the orchestrator whether a real analysis source (uploaded video or live
+   * camera) is active. With no input we stop the music instead of letting the
+   * mock simulator churn through playlists.
+   */
+  setInputActive(active: boolean): void {
+    if (active) {
+      if (!this.noInput) return;
+      this.noInput = false;
+      // Resume adapting (respects userPaused inside applyForState).
+      void this.applyForState(this.store.atmosphereState, false);
+    } else {
+      if (this.noInput) return;
+      this.noInput = true;
+      this.clearTimers();
+      void this.controller?.pause(800);
+      this.store.setPlaybackState("paused");
+      this.store.setTransition({
+        phase: "idle",
+        fromBucket: this.store.activeBucket,
+        toBucket: this.store.activeBucket,
+        startedAt: Date.now(),
+        durationMs: 0,
+        reason: "No video or camera — music stopped",
+      });
+    }
+  }
+
   private async applyForState(
     state: AtmosphereState,
     seed: boolean,
@@ -176,9 +211,11 @@ class SpotifyManager {
     confidence = this.store.confidenceScore,
   ): Promise<void> {
     if (!this.controller) return;
-    // Respect a manual pause: the engine must not auto-resume/transition until the
-    // user presses play again (seed calls — init/mode-switch — bypass this).
-    if (this.userPaused && !seed) return;
+    // Respect a manual pause AND "no live input": the engine must not
+    // auto-resume/transition while paused by the user, or while there's no real
+    // analysis source (no video/camera). Seed calls (init/mode-switch/manual
+    // play) bypass these.
+    if ((this.userPaused || this.noInput) && !seed) return;
     const s = this.store;
     const snap = this.controller.snapshot();
 

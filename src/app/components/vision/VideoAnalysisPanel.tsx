@@ -104,6 +104,9 @@ export function VideoAnalysisPanel() {
   // Global music state — driven by this panel's analysis while a video plays.
   const activeBucket = useAtmosphereStore((s) => s.activeBucket);
   const musicTrack = useAtmosphereStore((s) => s.currentTrack);
+  // Reasoning: why this mood (atmosphere engine) and why this music (orchestrator).
+  const moodReason = useAtmosphereStore((s) => s.transitionRule);
+  const musicReason = useAtmosphereStore((s) => s.transition.reason);
 
   const stateCfg = ATMOSPHERE_CONFIG[state];
 
@@ -575,6 +578,21 @@ export function VideoAnalysisPanel() {
               ) : (
                 <p className="text-white/40 text-sm mb-3">{analysing ? "Selecting music…" : "Play the video to score it"}</p>
               )}
+
+              {/* Why this selection — reasoning chain */}
+              {analysing && (
+                <div className="mb-3 space-y-1.5 border-l-2 border-white/10 pl-3">
+                  <div>
+                    <p className="text-white/30 text-[10px] uppercase tracking-wide">Why this mood</p>
+                    <p className="text-white/60 text-xs">{moodReason || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/30 text-[10px] uppercase tracking-wide">Why this music</p>
+                    <p className="text-white/60 text-xs">{musicReason || "—"}</p>
+                  </div>
+                </div>
+              )}
+
               <SoundControl />
             </div>
 
