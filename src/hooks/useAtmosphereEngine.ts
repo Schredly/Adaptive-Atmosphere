@@ -103,11 +103,14 @@ export function useAtmosphereEngine() {
         }
       }
 
-      // Hysteresis: only switch the committed mood once the new one has held for
-      // MOOD_HYSTERESIS_MS, so a brief energy blip doesn't flip the playlist.
+      // A learned (human-corrected) mood is explicit intent → commit instantly,
+      // skipping the anti-flicker hysteresis. Rule-derived moods still smooth.
       const nowMs = Date.now();
       let state = committedStateRef.current ?? desired;
-      if (desired === state) {
+      if (learnedHit) {
+        state = desired;
+        candidateRef.current = null;
+      } else if (desired === state) {
         candidateRef.current = null;
       } else {
         if (!candidateRef.current || candidateRef.current.state !== desired) {

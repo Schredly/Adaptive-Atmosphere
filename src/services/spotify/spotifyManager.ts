@@ -361,6 +361,20 @@ class SpotifyManager {
     this.controller?.setMuted?.(muted);
   }
 
+  /**
+   * Apply a user-corrected mood right now: switch to its bucket immediately,
+   * bypassing the cooldown and any stale AI read. (The learned correction is
+   * persisted separately so similar future clips adopt it too.)
+   */
+  async forceMood(state: AtmosphereState): Promise<void> {
+    if (!this.controller) return;
+    this.userPaused = false;
+    this.noInput = false;
+    this.store.setAIRead(null); // don't let a stale AI read re-override the fix
+    this.store.setLastTransitionAt(0); // clear cooldown so it switches now
+    await this.applyForState(state, true);
+  }
+
   // ── Store mirroring ─────────────────────────────────────────
   private pushSnapshot(): void {
     if (!this.controller) return;

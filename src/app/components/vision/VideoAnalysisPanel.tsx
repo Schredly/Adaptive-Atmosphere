@@ -11,6 +11,7 @@ import { ATMOSPHERE_CONFIG, ATMOSPHERE_STATES } from "@/types/atmosphere";
 import type { AtmosphereState } from "@/types/atmosphere";
 import { recordFeedback, downloadFeedback } from "@/services/ai/trainingFeedback";
 import { learnCorrection } from "@/services/ai/learnedMoods";
+import { spotifyManager } from "@/services/spotify/spotifyManager";
 import type { ActivityPatterns, MotionAnalysis, MotionSample } from "@/types/motion";
 import { NO_PATTERNS } from "@/types/motion";
 import { BUCKET_META } from "@/types/spotify";
@@ -140,15 +141,20 @@ export function VideoAnalysisPanel() {
       correctedMood: corrected,
       summary,
     });
-    // Apply forward: a corrected mood (or a thumbs-down with no correction that
-    // implies the rule call was wrong) teaches similar future videos.
-    if (corrected) learnCorrection(summary, corrected);
+    if (corrected) {
+      // Remember it for similar clips…
+      learnCorrection(summary, corrected);
+      // …and apply it to THIS clip right now (mood + music), no cooldown wait.
+      const store = useAtmosphereStore.getState();
+      store.applyAtmosphere(corrected, store.confidenceScore, `Corrected by you → ${corrected}`);
+      void spotifyManager.forceMood(corrected);
+    }
     setFeedbackMsg(
       corrected
-        ? `Learned: motion like this → ${corrected}`
+        ? `Set to ${corrected} now — I'll remember it for similar clips`
         : rating === "up"
           ? "Logged 👍 thanks"
-          : "Logged 👎 — pick a correct mood to teach it",
+          : "Logged 👎 — pick the correct mood to teach it",
     );
     setCorrectMood("");
     window.setTimeout(() => setFeedbackMsg(null), 2600);
