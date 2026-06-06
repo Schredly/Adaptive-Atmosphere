@@ -26,6 +26,8 @@ import {
 import { interpret, seedFeed } from "@/services/ai/interpretationEngine";
 import { isAIConfigured } from "@/services/ai/aiConfig";
 import { interpretMotion } from "@/services/ai/visionInterpreter";
+import { lookupLearnedMood } from "@/services/ai/learnedMoods";
+import type { MotionSummary } from "@/services/ai/visionInterpreter";
 import type { AtmosphereState } from "@/types/atmosphere";
 import { NO_PATTERNS } from "@/types/motion";
 import type { MotionSample } from "@/types/motion";
@@ -70,13 +72,37 @@ export function useAtmosphereEngine() {
       }
 
       // 2. Derive atmosphere (pattern-aware).
-      const { state, confidence } = read(sample);
-      const rule = describeTransition(
-        state,
+      const { state: ruleState, confidence } = read(sample);
+
+      // Build the summary once (used by learned-override + AI augmentation).
+      const summary: MotionSummary = {
+        energy: sample.energy,
+        velocity: sample.velocity ?? sample.intensity,
+        persistence: sample.persistence ?? 0,
+        rhythmConsistency: sample.rhythmConsistency ?? 0,
+        volatility: sample.volatility ?? 0,
+        subjects: sample.subjects,
+        patterns: sample.patterns ?? NO_PATTERNS,
+        ruleMood: ruleState,
+        environmentMode: store.environmentMode,
+      };
+
+      // Learned override: if the user has corrected a similar clip before, apply
+      // that mood (live sources only — the mock simulator shouldn't be steered).
+      let state = ruleState;
+      let rule = describeTransition(
+        ruleState,
         sample.energy,
         sample.velocity ?? sample.intensity,
         sample.patterns,
       );
+      if (store.motionSource === "live") {
+        const learned = lookupLearnedMood(summary);
+        if (learned && learned !== ruleState) {
+          state = learned;
+          rule = `Learned from your feedback → ${learned}`;
+        }
+      }
       store.applyAtmosphere(state, confidence, rule);
 
       // 3. Metrics.
@@ -96,17 +122,7 @@ export function useAtmosphereEngine() {
         const changed = state !== prevStateRef.current;
         if (changed || now - lastAiRef.current > AI_MIN_INTERVAL) {
           lastAiRef.current = now;
-          void interpretMotion({
-            energy: sample.energy,
-            velocity: sample.velocity ?? sample.intensity,
-            persistence: sample.persistence ?? 0,
-            rhythmConsistency: sample.rhythmConsistency ?? 0,
-            volatility: sample.volatility ?? 0,
-            subjects: sample.subjects,
-            patterns: sample.patterns ?? NO_PATTERNS,
-            ruleMood: state,
-            environmentMode: store.environmentMode,
-          })
+          void interpretMotion(summary)
             .then((r) => useAtmosphereStore.getState().setAIRead(r))
             .catch(() => {
               /* API down/misconfigured — keep using the rule engine */

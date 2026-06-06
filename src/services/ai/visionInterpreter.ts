@@ -9,6 +9,7 @@
  */
 
 import { getApiKey, getModel, getProvider } from "./aiConfig";
+import { learnedExamples, signatureOf } from "./learnedMoods";
 import { MUSIC_BUCKETS } from "@/types/spotify";
 import type { MusicBucket } from "@/types/spotify";
 import { ATMOSPHERE_STATES } from "@/types/atmosphere";
@@ -46,7 +47,14 @@ function buildUserPrompt(s: MotionSummary): string {
   const active = Object.entries(s.patterns)
     .filter(([, v]) => v)
     .map(([k]) => k);
-  return [
+  // Few-shot: recent human corrections so the model adapts to this user's taste.
+  const examples = learnedExamples(6);
+  const fewShot = examples.length
+    ? "Human corrections for similar motion (prefer these when the current motion matches):\n" +
+      examples.map((e) => `- ${signatureOf(e.summary)} → ${e.mood}`).join("\n") +
+      "\n\n"
+    : "";
+  return fewShot + [
     `Environment: ${s.environmentMode}`,
     `Energy: ${Math.round(s.energy)}/100`,
     `Velocity: ${Math.round(s.velocity)}/100`,

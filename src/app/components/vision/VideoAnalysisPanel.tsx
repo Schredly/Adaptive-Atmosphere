@@ -10,6 +10,7 @@ import { read } from "@/services/atmosphere/atmosphereEngine";
 import { ATMOSPHERE_CONFIG, ATMOSPHERE_STATES } from "@/types/atmosphere";
 import type { AtmosphereState } from "@/types/atmosphere";
 import { recordFeedback, downloadFeedback } from "@/services/ai/trainingFeedback";
+import { learnCorrection } from "@/services/ai/learnedMoods";
 import type { ActivityPatterns, MotionAnalysis, MotionSample } from "@/types/motion";
 import { NO_PATTERNS } from "@/types/motion";
 import { BUCKET_META } from "@/types/spotify";
@@ -115,6 +116,18 @@ export function VideoAnalysisPanel() {
 
   const submitFeedback = (rating: "up" | "down") => {
     const st = useAtmosphereStore.getState();
+    const summary = {
+      energy: st.motionEnergyScore,
+      velocity: st.velocity,
+      persistence: st.persistence,
+      rhythmConsistency: st.rhythmConsistency,
+      volatility: st.volatility,
+      subjects: st.subjectCount,
+      patterns: st.activityPatterns,
+      ruleMood: st.atmosphereState,
+      environmentMode: st.environmentMode,
+    };
+    const corrected = correctMood ? (correctMood as AtmosphereState) : undefined;
     recordFeedback({
       at: Date.now(),
       rating,
@@ -122,22 +135,21 @@ export function VideoAnalysisPanel() {
       systemBucket: st.activeBucket,
       track: st.currentTrack?.title ?? null,
       source: st.aiRead ? "ai" : "rules",
-      correctedMood: correctMood ? (correctMood as AtmosphereState) : undefined,
-      summary: {
-        energy: st.motionEnergyScore,
-        velocity: st.velocity,
-        persistence: st.persistence,
-        rhythmConsistency: st.rhythmConsistency,
-        volatility: st.volatility,
-        subjects: st.subjectCount,
-        patterns: st.activityPatterns,
-        ruleMood: st.atmosphereState,
-        environmentMode: st.environmentMode,
-      },
+      correctedMood: corrected,
+      summary,
     });
-    setFeedbackMsg(rating === "up" ? "Logged 👍 thanks" : "Logged 👎 — will train on it");
+    // Apply forward: a corrected mood (or a thumbs-down with no correction that
+    // implies the rule call was wrong) teaches similar future videos.
+    if (corrected) learnCorrection(summary, corrected);
+    setFeedbackMsg(
+      corrected
+        ? `Learned: motion like this → ${corrected}`
+        : rating === "up"
+          ? "Logged 👍 thanks"
+          : "Logged 👎 — pick a correct mood to teach it",
+    );
     setCorrectMood("");
-    window.setTimeout(() => setFeedbackMsg(null), 2200);
+    window.setTimeout(() => setFeedbackMsg(null), 2600);
   };
 
   const stateCfg = ATMOSPHERE_CONFIG[state];
