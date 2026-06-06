@@ -31,6 +31,7 @@ import type {
   TransitionInfo,
 } from "@/types/spotify";
 import type { CameraDevice, CameraStatus } from "@/services/camera/cameraService";
+import type { AIRead } from "@/services/ai/visionInterpreter";
 
 type PlaylistMappings = Record<MusicBucket, PlaylistRef | null>;
 
@@ -88,6 +89,8 @@ export interface AtmosphereStore {
 
   // ── AI feed ───────────────────────────────────────────────
   aiInterpretationFeed: AIInterpretation[];
+  /** Latest LLM mood read (augments the rule engine); null when AI is off. */
+  aiRead: AIRead | null;
 
   // ── Spotify orchestration ─────────────────────────────────
   spotifyConnected: boolean;
@@ -135,6 +138,7 @@ export interface AtmosphereStore {
 
   pushInterpretation: (items: AIInterpretation[]) => void;
   setFeed: (items: AIInterpretation[]) => void;
+  setAIRead: (read: AIRead | null) => void;
 
   setSpotifyConnected: (connected: boolean) => void;
   setSpotifyMode: (mode: SpotifyMode) => void;
@@ -204,6 +208,7 @@ export const useAtmosphereStore = create<AtmosphereStore>()(
 
   // AI feed
   aiInterpretationFeed: [],
+  aiRead: null,
 
   // Spotify
   spotifyConnected: true,
@@ -279,6 +284,7 @@ export const useAtmosphereStore = create<AtmosphereStore>()(
         : { aiInterpretationFeed: [...items, ...s.aiInterpretationFeed].slice(0, FEED_CAP) },
     ),
   setFeed: (aiInterpretationFeed) => set({ aiInterpretationFeed }),
+  setAIRead: (aiRead) => set({ aiRead }),
 
   setSpotifyConnected: (spotifyConnected) => set({ spotifyConnected }),
   setSpotifyMode: (spotifyMode) => set({ spotifyMode }),

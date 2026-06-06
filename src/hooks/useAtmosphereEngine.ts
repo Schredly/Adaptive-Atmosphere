@@ -24,16 +24,22 @@ import {
   read,
 } from "@/services/atmosphere/atmosphereEngine";
 import { interpret, seedFeed } from "@/services/ai/interpretationEngine";
+import { isAIConfigured } from "@/services/ai/aiConfig";
+import { interpretMotion } from "@/services/ai/visionInterpreter";
 import type { AtmosphereState } from "@/types/atmosphere";
+import { NO_PATTERNS } from "@/types/motion";
 import type { MotionSample } from "@/types/motion";
 
 /** How often the derivation loop runs (ms). */
 const TICK_MS = 1300;
+/** Minimum gap between LLM calls when nothing changes (ms). */
+const AI_MIN_INTERVAL = 6000;
 
 export function useAtmosphereEngine() {
   const simulatorRef = useRef(createMotionSimulator(42));
   const prevSampleRef = useRef<MotionSample | undefined>(undefined);
   const prevStateRef = useRef<AtmosphereState | undefined>(undefined);
+  const lastAiRef = useRef(0);
 
   // Seed the AI feed once on mount.
   useEffect(() => {
@@ -82,6 +88,31 @@ export function useAtmosphereEngine() {
         previousState: prevStateRef.current,
       });
       store.pushInterpretation(lines);
+
+      // 5. Optional LLM augmentation: when a real source is live and AI is
+      // configured, ask the model for a richer mood read on change / periodically.
+      if (store.motionSource === "live" && isAIConfigured()) {
+        const now = Date.now();
+        const changed = state !== prevStateRef.current;
+        if (changed || now - lastAiRef.current > AI_MIN_INTERVAL) {
+          lastAiRef.current = now;
+          void interpretMotion({
+            energy: sample.energy,
+            velocity: sample.velocity ?? sample.intensity,
+            persistence: sample.persistence ?? 0,
+            rhythmConsistency: sample.rhythmConsistency ?? 0,
+            volatility: sample.volatility ?? 0,
+            subjects: sample.subjects,
+            patterns: sample.patterns ?? NO_PATTERNS,
+            ruleMood: state,
+            environmentMode: store.environmentMode,
+          })
+            .then((r) => useAtmosphereStore.getState().setAIRead(r))
+            .catch(() => {
+              /* API down/misconfigured — keep using the rule engine */
+            });
+        }
+      }
 
       prevSampleRef.current = sample;
       prevStateRef.current = state;

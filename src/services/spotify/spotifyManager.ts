@@ -191,6 +191,7 @@ class SpotifyManager {
       if (this.noInput) return;
       this.noInput = true;
       this.clearTimers();
+      this.store.setAIRead(null); // no source → drop the stale AI read
       void this.controller?.pause(800);
       this.store.setPlaybackState("paused");
       this.store.setTransition({
@@ -219,8 +220,14 @@ class SpotifyManager {
     const s = this.store;
     const snap = this.controller.snapshot();
 
+    // Augment: when the LLM has a fresh read, let its mood drive the selection
+    // (flows through STATE_TO_BUCKET + escalate/de-escalate). Falls back to the
+    // rule mood if AI is off/stale, so playback is robust without the API.
+    const ai = s.aiRead;
+    const effectiveState = ai && Date.now() - ai.at < 12000 ? ai.mood : state;
+
     const decision = decideOrchestration({
-      state,
+      state: effectiveState,
       energy,
       confidence,
       now: Date.now(),

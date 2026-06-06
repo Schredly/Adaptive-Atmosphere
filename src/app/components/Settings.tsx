@@ -1,9 +1,19 @@
 import { motion } from "motion/react";
-import { Camera, Eye, Sliders, Brain, Palette, Sparkles } from "lucide-react";
+import { Camera, Eye, Sliders, Brain, Palette, Sparkles, Cpu } from "lucide-react";
 import { useState } from "react";
 import { GlassCard } from "./GlassCard";
 import { AnimatedSlider } from "./AnimatedSlider";
 import { useAtmosphereStore } from "@/store/useAtmosphereStore";
+import {
+  getProvider,
+  setProvider as persistProvider,
+  getApiKey,
+  setApiKey,
+  getModel,
+  setModel,
+  DEFAULT_MODEL,
+} from "@/services/ai/aiConfig";
+import type { AIProvider } from "@/services/ai/aiConfig";
 
 export function Settings() {
   // Camera + engine settings are global so they take effect on the Dashboard
@@ -42,6 +52,27 @@ export function Settings() {
   const animationIntensity = settings.animationIntensity;
   const setAnimationIntensity = (v: number) => updateSettings({ animationIntensity: v });
   const [compactMode, setCompactMode] = useState(false);
+
+  // ── AI provider (BYO key, stored locally) ──
+  const [aiProvider, setAiProvider] = useState<AIProvider>(getProvider());
+  const [aiKey, setAiKey] = useState(getApiKey(getProvider()));
+  const [aiModel, setAiModel] = useState(getModel(getProvider()));
+  const [aiSaved, setAiSaved] = useState(false);
+
+  const onPickProvider = (p: AIProvider) => {
+    setAiProvider(p);
+    persistProvider(p);
+    setAiKey(p === "off" ? "" : getApiKey(p));
+    setAiModel(p === "off" ? "" : getModel(p));
+  };
+  const saveAi = () => {
+    if (aiProvider !== "off") {
+      setApiKey(aiProvider, aiKey);
+      setModel(aiProvider, aiModel || DEFAULT_MODEL[aiProvider]);
+    }
+    setAiSaved(true);
+    window.setTimeout(() => setAiSaved(false), 1500);
+  };
 
   return (
     <div className="min-h-screen p-8 bg-gradient-to-br from-[#000000] via-[#0a0a12] to-[#000000]">
@@ -242,6 +273,69 @@ export function Settings() {
               onChange={setMultiPersonWeighting}
               color="#8b5cf6"
             />
+          </div>
+
+          {/* LLM provider — augments the rule engine with a richer mood read */}
+          <div className="mt-6 pt-6 border-t border-white/10">
+            <div className="flex items-center gap-2 mb-4">
+              <Cpu className="w-4 h-4 text-white/60" />
+              <h3 className="text-white text-sm">AI Vision Model</h3>
+              <span className="text-white/30 text-xs">augments the rules · key stored locally</span>
+            </div>
+
+            <div className="flex gap-2 mb-4">
+              {(["off", "anthropic", "openai"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => onPickProvider(p)}
+                  className={`px-4 py-2 rounded-lg text-sm capitalize transition-colors ${
+                    aiProvider === p
+                      ? "bg-gradient-to-r from-[#8b5cf6]/30 to-[#ec4899]/30 text-white border border-[#8b5cf6]/40"
+                      : "bg-black/30 text-white/50 border border-white/10 hover:text-white/80"
+                  }`}
+                >
+                  {p === "off" ? "Off" : p}
+                </button>
+              ))}
+            </div>
+
+            {aiProvider !== "off" && (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-white/50 text-xs">{aiProvider === "openai" ? "OpenAI" : "Anthropic"} API key</label>
+                  <input
+                    type="password"
+                    value={aiKey}
+                    onChange={(e) => setAiKey(e.target.value)}
+                    placeholder={aiProvider === "openai" ? "sk-…" : "sk-ant-…"}
+                    spellCheck={false}
+                    autoComplete="off"
+                    className="mt-1 w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/90 font-mono focus:outline-none focus:border-[#8b5cf6]/50"
+                  />
+                </div>
+                <div>
+                  <label className="text-white/50 text-xs">Model</label>
+                  <input
+                    value={aiModel}
+                    onChange={(e) => setAiModel(e.target.value)}
+                    placeholder={DEFAULT_MODEL[aiProvider]}
+                    spellCheck={false}
+                    className="mt-1 w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white/80 font-mono focus:outline-none focus:border-[#8b5cf6]/50"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={saveAi}
+                    className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#8b5cf6] to-[#ec4899] text-white text-sm"
+                  >
+                    {aiSaved ? "Saved ✓" : "Save AI settings"}
+                  </button>
+                  <span className="text-white/30 text-xs">
+                    Sends pose/motion summaries (not video) on each transition. Your key stays in this browser.
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </GlassCard>
 

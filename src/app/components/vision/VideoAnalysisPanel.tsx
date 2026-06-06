@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { Upload, Play, Pause, Film, Brain, Volume2, VolumeX } from "lucide-react";
+import { Upload, Play, Pause, Film, Brain, Volume2, VolumeX, ThumbsUp, ThumbsDown, Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { poseService } from "@/services/vision/poseService";
@@ -7,8 +7,9 @@ import { MotionAnalysisEngine } from "@/services/vision/motionAnalysisEngine";
 import { transcodeToMp4, isTranscodeSupported, TranscodeError } from "@/services/vision/videoTranscoder";
 import { visionBus } from "@/services/vision/visionBus";
 import { read } from "@/services/atmosphere/atmosphereEngine";
-import { ATMOSPHERE_CONFIG } from "@/types/atmosphere";
+import { ATMOSPHERE_CONFIG, ATMOSPHERE_STATES } from "@/types/atmosphere";
 import type { AtmosphereState } from "@/types/atmosphere";
+import { recordFeedback, downloadFeedback } from "@/services/ai/trainingFeedback";
 import type { ActivityPatterns, MotionAnalysis, MotionSample } from "@/types/motion";
 import { NO_PATTERNS } from "@/types/motion";
 import { BUCKET_META } from "@/types/spotify";
@@ -107,6 +108,37 @@ export function VideoAnalysisPanel() {
   // Reasoning: why this mood (atmosphere engine) and why this music (orchestrator).
   const moodReason = useAtmosphereStore((s) => s.transitionRule);
   const musicReason = useAtmosphereStore((s) => s.transition.reason);
+  const aiRead = useAtmosphereStore((s) => s.aiRead);
+
+  const [correctMood, setCorrectMood] = useState<string>("");
+  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+
+  const submitFeedback = (rating: "up" | "down") => {
+    const st = useAtmosphereStore.getState();
+    recordFeedback({
+      at: Date.now(),
+      rating,
+      systemMood: st.atmosphereState,
+      systemBucket: st.activeBucket,
+      track: st.currentTrack?.title ?? null,
+      source: st.aiRead ? "ai" : "rules",
+      correctedMood: correctMood ? (correctMood as AtmosphereState) : undefined,
+      summary: {
+        energy: st.motionEnergyScore,
+        velocity: st.velocity,
+        persistence: st.persistence,
+        rhythmConsistency: st.rhythmConsistency,
+        volatility: st.volatility,
+        subjects: st.subjectCount,
+        patterns: st.activityPatterns,
+        ruleMood: st.atmosphereState,
+        environmentMode: st.environmentMode,
+      },
+    });
+    setFeedbackMsg(rating === "up" ? "Logged 👍 thanks" : "Logged 👎 — will train on it");
+    setCorrectMood("");
+    window.setTimeout(() => setFeedbackMsg(null), 2200);
+  };
 
   const stateCfg = ATMOSPHERE_CONFIG[state];
 
@@ -590,10 +622,62 @@ export function VideoAnalysisPanel() {
                     <p className="text-white/30 text-[10px] uppercase tracking-wide">Why this music</p>
                     <p className="text-white/60 text-xs">{musicReason || "—"}</p>
                   </div>
+                  {aiRead && (
+                    <div>
+                      <p className="text-[#8b5cf6]/70 text-[10px] uppercase tracking-wide">AI read · {aiRead.provider}</p>
+                      <p className="text-white/60 text-xs">
+                        <span className="text-white/80 capitalize">{aiRead.mood}</span> — {aiRead.reasoning}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
               <SoundControl />
+            </div>
+
+            {/* Training feedback — label the call to improve the model over time */}
+            <div className="bg-black/20 rounded-2xl border border-white/5 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-white/40 text-xs">TRAINING FEEDBACK</p>
+                <button
+                  onClick={downloadFeedback}
+                  title="Export collected feedback as JSONL"
+                  className="text-white/30 hover:text-white/70 flex items-center gap-1 text-[10px]"
+                >
+                  <Download className="w-3 h-3" /> Export
+                </button>
+              </div>
+              {feedbackMsg ? (
+                <p className="text-[#10b981] text-sm py-1">{feedbackMsg}</p>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 mb-3">
+                    <button
+                      onClick={() => submitFeedback("up")}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-white/5 hover:bg-[#10b981]/20 border border-white/10 hover:border-[#10b981]/40 text-white/70"
+                    >
+                      <ThumbsUp className="w-4 h-4" /> <span className="text-xs">Good fit</span>
+                    </button>
+                    <button
+                      onClick={() => submitFeedback("down")}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg bg-white/5 hover:bg-[#ef4444]/20 border border-white/10 hover:border-[#ef4444]/40 text-white/70"
+                    >
+                      <ThumbsDown className="w-4 h-4" /> <span className="text-xs">Off</span>
+                    </button>
+                  </div>
+                  <select
+                    value={correctMood}
+                    onChange={(e) => setCorrectMood(e.target.value)}
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white/80 focus:outline-none focus:border-white/30"
+                  >
+                    <option value="">Correct mood (optional)…</option>
+                    {ATMOSPHERE_STATES.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </>
+              )}
             </div>
 
             <div className="bg-black/20 rounded-2xl border border-white/5 p-5">
