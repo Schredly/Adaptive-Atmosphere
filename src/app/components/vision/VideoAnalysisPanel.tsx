@@ -199,7 +199,11 @@ export function VideoAnalysisPanel() {
 
   // Process a single detected frame: overlay + readouts + timeline record.
   const processFrame = (video: HTMLVideoElement) => {
-    const frame = poseService.detect(video, video.currentTime * 1000, false);
+    // Use a monotonic wall-clock timestamp, NOT video.currentTime: MediaPipe's
+    // landmarker (a singleton across clips) requires strictly increasing
+    // timestamps, and currentTime restarts at 0 on each new video → it would
+    // throw and kill the loop on the second clip.
+    const frame = poseService.detect(video, performance.now(), false);
     if (!frame) return;
     const a = analyzerRef.current.ingest(frame);
     visionBus.publish(frame, a, video.videoWidth, video.videoHeight);
